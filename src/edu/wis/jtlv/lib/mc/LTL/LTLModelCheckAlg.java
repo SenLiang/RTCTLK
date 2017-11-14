@@ -117,8 +117,8 @@ public class LTLModelCheckAlg extends ModelCheckAlgI {
 	 * Compose the design with the tester (user's or the one built from the LTL
 	 * specification), and check feasible states.
 	 * </p>
-	 * 
-	 * @throws Noting.
+	 *
+	 * @throws
 	 * 
 	 * @return A counter example if the algorithm fails (i.e.
 	 *         {@link edu.wis.jtlv.lib.AlgResultPath}), or a string with
@@ -201,7 +201,7 @@ public class LTLModelCheckAlg extends ModelCheckAlgI {
 	 * @return
 	 */
 	private BDD[] extractWithness(BDD feasible, Module designWithTester,
-			BDDVarSet relevantVars) {
+			BDDVarSet relevantVars) {//this.extractWithness(feas, design, visibleVars);
 		BDD temp, fulfill;
 		// saving to the previous restriction state
 		Vector<BDD> trans_restrictions = designWithTester

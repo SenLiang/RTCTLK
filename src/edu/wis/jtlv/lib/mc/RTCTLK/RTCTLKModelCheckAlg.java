@@ -2,24 +2,28 @@ package edu.wis.jtlv.lib.mc.RTCTLK;
 
 import edu.wis.jtlv.env.Env;
 import edu.wis.jtlv.env.core.smv.schema.SMVAgentInfo;
+import edu.wis.jtlv.env.module.Module;
 import edu.wis.jtlv.env.module.ModuleWithStrongFairness;
-import edu.wis.jtlv.env.spec.Operator;
-import edu.wis.jtlv.env.spec.Spec;
-import edu.wis.jtlv.env.spec.SpecBDD;
-import edu.wis.jtlv.env.spec.SpecExp;
+import edu.wis.jtlv.env.spec.*;
 import edu.wis.jtlv.lib.AlgExceptionI;
 import edu.wis.jtlv.lib.AlgResultI;
+import edu.wis.jtlv.lib.AlgResultPath;
 import edu.wis.jtlv.lib.AlgResultString;
 import edu.wis.jtlv.lib.mc.CTL.CTLModelCheckAlg;
 import edu.wis.jtlv.lib.mc.ModelCheckAlgException;
+import edu.wis.jtlv.old_lib.mc.ModelCheckException;
 import net.sf.javabdd.BDD;
 import net.sf.javabdd.BDDVarSet;
+
+import static edu.wis.jtlv.env.spec.Operator.*;
 
 public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
     public RTCTLKModelCheckAlg(ModuleWithStrongFairness design, Spec property) {
         super(design, property);
     }
-
+    //add
+    Module design = getDesign();
+    BDD feas = design.feasible();//所有的可达状态
     // agentName KNOW p
     // forall(system_global_variables - agentName's visible_variables).((global_reachable_states & fair_states) -> p)
     public BDD know(String agentName, BDD p) throws ModelCheckAlgException {
@@ -45,42 +49,6 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
         return res;
     }
 
-    // E[p BU from..to q] under fairness
-    public BDD EfBU(int from, int to, BDD p, BDD q) {
-        //TODO
-        return null;
-    }
-
-    // A[p BU from..to q] under fairness
-    public BDD AfBU(int from, int to, BDD p, BDD q) {
-        //TODO
-        return null;
-    }
-
-    // EBF from..to p under fairness
-    public BDD EfBF(int from, int to, BDD p) {
-        //TODO
-        return null;
-    }
-
-    // ABF from..to p under fairness
-    public BDD AfBF(int from, int to, BDD p) {
-        //TODO
-        return null;
-    }
-
-    // EBG from..to p under fairness
-    public BDD EfBG(int from, int to, BDD p) {
-        //TODO
-        return null;
-    }
-
-    // ABG from..to p under fairness
-    public BDD AfBG(int from, int to, BDD p) {
-        //TODO
-        return null;
-    }
-
     public BDD satRTCTLK(Spec property) throws ModelCheckAlgException {
         if (property instanceof SpecBDD)
             return ((SpecBDD) property).getVal();
@@ -89,15 +57,36 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
         SpecExp propExp = (SpecExp) property;
         Operator op = propExp.getOperator();
         Spec[] child = propExp.getChildren();
-        BDD left, right;
-        if(op == Operator.KNOW) {
-            left = null;
-            right = satRTCTLK(child[1]);
-        }else {
-            left = satRTCTLK(child[0]);
-            right = (op.isBinary()) ? satRTCTLK(child[1]) : null;
-        }
 
+        //Uppdate by LS on : 2017/10/21
+        int noo = op.numOfOperands();
+        SpecRange range = null;
+        BDD left=null; BDD right=null;
+
+        if (noo==1) //EX, EF, EG, AX, AF,AG left
+            left=satRTCTLK(child[0]);
+        if (noo==2) {//ABF, ABG, EBF, EBG  left or right//区间不作节点
+            if (child[0] instanceof SpecRange)
+            {   range = (SpecRange) child[0];
+                left= satRTCTLK(child[1]); }
+            else if(op == Operator.KNOW) {
+                left = null;
+                right = satRTCTLK(child[1]);
+            }
+            else
+            {   left=satRTCTLK(child[0]);//AU GU
+                right=satRTCTLK(child[1]);
+            }
+        }
+        if (noo==3)// ABU, EBU
+        {
+            if (child[1] instanceof SpecRange) {
+                range = (SpecRange) child[1];
+                left = satRTCTLK(child[0]);
+                right = satRTCTLK(child[2]);
+            }
+        }
+        System.out.println("NUM--"+noo+"   op--"+op+"   left--"+left+"   right--"+right);
         // propositional
         if (op == Operator.NOT)
             return left.not();
@@ -133,11 +122,22 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
             return EfU(left, right);
 
         // bounded CTL temporal
+        if (op == Operator.EBU)
+            return EfBU(range.getFrom(), range.getTo(), left, right);//EfBU(int from, int to, BDD p, BDD q)
+        if (op == Operator.ABU)//AfBU(int from, int to, BDD p, BDD q)
+            return AfBU(range.getFrom(), range.getTo(), left, right);
+        if (op == Operator.EBF)//EfBF(int from, int to, BDD p)
+            return EfBF(range.getFrom(), range.getTo(), left);
+        if (op == Operator.ABF)//(int from, int to, BDD p)
+            return AfBF(range.getFrom(), range.getTo(), left);
+        if (op == Operator.EBG)//(int from, int to, BDD p)
+            return EfBG(range.getFrom(), range.getTo(), left);
+        if (op == Operator.ABG)//AfBG(int from, int to, BDD p)
+            return AfBG(range.getFrom(), range.getTo(), left);
 
         // epistemic
         if (op == Operator.KNOW) {
-            String agentName;
-            agentName = child[0].toString();
+            String agentName = child[0].toString();
             return know(agentName, right);
         }
 
@@ -145,23 +145,12 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
         throw new ModelCheckAlgException(
                 "Cannot identify root operator for sub specification: " + property);
     }
-
-/*    @Override
-    public void modelCheck(Spec property) throws ModelCheckException, CounterExampleException, ModelCheckAlgException {
-        if (property == null)
-            throw new ModelCheckException("Cannot model check a null specification.");
-        if (!property.isRealTimeCTLKSpec())
-            throw new ModelCheckException("Cannot model check non RTCTLK specification: " + property);
-        setFairStates(null);
-
-        BDD calculateStates = satRTCTLK(property);
-        if (!getDesign().initial().imp(calculateStates).not().isZero()) {
-            throw new CounterExampleException(
-                    "\n*** Property is NOT VALID ***", null);
-        }
+    @Override
+    public AlgResultI preAlgorithm() throws AlgExceptionI {
+        if (!getProperty().isRealTimeCTLKSpec())
+            throw new ModelCheckAlgException("Cannot model check non RTCTLK specification: " + getProperty());
+        return null;
     }
-*/
-
     @Override
     public AlgResultI doAlgorithm() throws AlgExceptionI {
         System.out.println("model checking RTCTLK: " + getProperty());
@@ -172,7 +161,6 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
 
         //setFairStates(Env.TRUE());
 
-
         // could throw an exception...
         BDD calculateStates = satRTCTLK(getProperty());
         BDD FairInitStates = getDesign().initial().and(getFairStates());
@@ -180,9 +168,104 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
         if(FairInitStates.imp(calculateStates).isOne()){
             return new AlgResultString(true, "*** Property is VALID ***");
         }else{
-            return new AlgResultString(false, "*** Property is NOT VALID ***");
+            BDD[] example = new BDD[0];
+            try {
+                example = extractWithness(getProperty());
+            } catch (ModelCheckException e) {
+                e.printStackTrace();
+            }
+            if (example==null)
+                return new AlgResultString(false, "*** Property is NOT VALID ***");
+            else
+                return new AlgResultPath(false, example);
         }
-
     }
 
+
+    /*
+    begin RTCTLK counterexample
+     */
+    private BDD[] extractWithness(Spec property) throws ModelCheckException, ModelCheckAlgException {
+        //System.out.println("Spec  "+property+"initial  "+property);
+        SpecExp propExp = (SpecExp) property;
+        Operator op = propExp.getOperator();
+        if(op==EX|op==EF|op==EG|op==EU|op==EBF|op==EBG|op==EBU) return null;
+        Spec[] child = propExp.getChildren();
+        int noo = op.numOfOperands();
+        SpecRange range = null;
+        BDD left=null;
+        BDD right=null;
+        if (noo==1) //EX, EF, EG, AX, AF,AG left
+            left=satCTL(child[0]);
+        if (noo==2) {//ABF, ABG, EBF, EBG  left or right
+            if (child[0] instanceof SpecRange)
+            { range = (SpecRange) child[0];
+                left=satCTL(child[1]);}//xxxxxxxx
+            else
+            {   left=satCTL(child[0]);//AU GU
+                right=satCTL(child[1]);
+            }
+        }
+        if (noo==3)// ABU, EBU
+        {
+            if (child[1] instanceof SpecRange)
+            { range = (SpecRange) child[1];
+                left=satCTL(child[0]);
+                right=satCTL(child[2]);
+            }
+        }
+        //设置initial()为起点
+        BDD s=design.initial().and(design.feasible().satOne(design.moduleUnprimeVars(),false));
+        switch (op) {
+            /** Except for NOT、FINALLY、GLOBALLY、HISTORICALLY、NEXT、NOT_PREV_NOT、ONCE、PREV、B_FINALLY、B_GLOBALLY
+             AND、OR、XOR、XNOR、IFF、IMPLIES、RELEASES、SINCE、TRIGGERED、UNTIL、B_UNTIL、B_UNTIL0 **/
+            case AX:
+                return EX_example(s, left.not());
+            case AG:
+                return EU_example(s,Env.TRUE(),left.not());
+            case AF:
+                return EG_example(s,left.not());
+            case AU:
+                BDD[] EU= EU_example(s,right.not(),left.not().and(right.not()));
+                if (EU==null){
+                    BDD[] EG= EG_example(s,right.not());
+                    return EG;}
+                return EU;
+            case ABF:
+                return EBG_example(s,range.getFrom(), range.getTo(),left.not());
+            case ABG:
+                return EBU_example(s,range.getFrom(), range.getTo(),Env.TRUE(),left.not());
+            case ABU:
+                BDD[] EBU= EBU_example(s,range.getFrom(), range.getTo(),right.not(),left.not().and(right.not()));
+                if (EBU==null){
+                    BDD[] EBG= EBG_example(s,range.getFrom(), range.getTo(),right.not());
+                    return EBG;}
+                return EBU;
+//				System.out.println("EBG-----------------------------------------------------------");
+//				for(int i=0;i<EBG.length  ;i++)
+//				{  if(EBG[i]==null)break;
+//					System.out.println(i+"---"+EBG[i]);
+//				}
+//				System.out.println("EBU-----------------------------------------------------------");
+//				for(int i=0;i<EBU.length  ;i++)
+//				{  if(EBU[i]==null)break;
+//					System.out.println(i+"---"+EBU[i]);
+//				}
+            case KNOW:
+                return KNOW_example(s,range.getFrom(), range.getTo(),left.not());
+        }
+        return null;
+    }
+
+    public BDD[] KNOW_example(BDD s,int from, int to, BDD f){
+        return null;
+    }
+
+
+      /*
+    end RTCTLK counterexample
+     */
 }
+
+
+

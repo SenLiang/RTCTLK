@@ -7,10 +7,10 @@ import net.sf.javabdd.BDD;
  * <p>
  * BDD array results (Path).
  * </p>
- * 
+ *
  * @version {@value edu.wis.jtlv.env.Env#version}
  * @author yaniv sa'ar.
- * 
+ *
  */
 public class AlgResultPath implements AlgResultI {
 	private ResultStatus stat;
@@ -21,7 +21,7 @@ public class AlgResultPath implements AlgResultI {
 	 * A constructor for a path results, with a general flag is was
 	 * successful.
 	 * </p>
-	 * 
+	 *
 	 * @param was_successful
 	 *            Did the algorithm succeed.
 	 * @param res
@@ -37,7 +37,7 @@ public class AlgResultPath implements AlgResultI {
 	 * A constructor for a path results, with a general flag is was
 	 * successful.
 	 * </p>
-	 * 
+	 *
 	 * @param fin_status
 	 *            The algorithm finishing status.
 	 * @param res
@@ -52,7 +52,7 @@ public class AlgResultPath implements AlgResultI {
 	 * <p>
 	 * A constructor for a path results, without successfulness status.
 	 * </p>
-	 * 
+	 *
 	 * @param res
 	 *            The results themselves.
 	 */
@@ -73,7 +73,7 @@ public class AlgResultPath implements AlgResultI {
 	 * <p>
 	 * A BDD[] object representation of the results.
 	 * </p>
-	 * 
+	 *
 	 * @return A BDD[] object representing the results.
 	 */
 	@Override
@@ -87,11 +87,15 @@ public class AlgResultPath implements AlgResultI {
 	@Override
 	public String resultString() {
 		String res = "";
+		res += "*** Property is NOT VALID ***\n";//add
 		res += "   Counter Example \n";
 		res += "=====================\n";
-		for (int i = 0; i < this.result.length; i++) {
+
+		for (int i = 0; i < this.result.length ; i++) {//add this.result[i]!=null
+			if(this.result[i]==null) break;
 			res += "[" + i + "] " + Env.toNiceString(this.result[i]);
 			res += ((i == (this.result.length - 1)) ? "" : "\n");
+
 		}
 		return res;
 	}

@@ -1,15 +1,20 @@
 import java.io.IOException;
 
-import net.sf.javabdd.BDD;
+import edu.wis.jtlv.lib.AlgExceptionI;
+import edu.wis.jtlv.lib.mc.CTL.CTLModelCheckAlg;
+import edu.wis.jtlv.lib.mc.LTL.LTLModelCheckAlg;
+import edu.wis.jtlv.lib.mc.RTCTLK.RTCTLKModelCheckAlg;
 
+
+import edu.wis.jtlv.old_lib.mc.LTLModelChecker;
+import edu.wis.jtlv.old_lib.mc.CTLModelChecker;
+import edu.wis.jtlv.old_lib.mc.ModelCheckException;
+import edu.wis.jtlv.old_lib.mc.SimpleModelChecker;
+import net.sf.javabdd.BDD;
 import edu.wis.jtlv.env.Env;
 import edu.wis.jtlv.env.module.ModuleException;
 import edu.wis.jtlv.env.module.SMVModule;
 import edu.wis.jtlv.env.spec.Spec;
-import edu.wis.jtlv.old_lib.mc.CTLModelChecker;
-import edu.wis.jtlv.old_lib.mc.LTLModelChecker;
-import edu.wis.jtlv.old_lib.mc.ModelCheckException;
-import edu.wis.jtlv.old_lib.mc.SimpleModelChecker;
 
 /**
  * @version {@value edu.wis.jtlv.env.Env#version}
@@ -28,12 +33,12 @@ public class ModelCheckingTest {
 		simpleCheckReact();
 		Env.resetEnv();
 */
-//		Check_test();
-
+		//Check_test();
 		Env.resetEnv();
+		//rtctlCheck();
+		//ltlCheck();
 		rtctlkCheck();
-//		ltlCheck();
-
+		//CTLCounterExample();
 		System.out.println("DONE");
 	}
 
@@ -135,7 +140,6 @@ public class ModelCheckingTest {
 		// ///////////////////////////////////////
 
 	}
-
 	public static void simpleCheckTempEntail() {
 		// System.setProperty("bdd", "buddy");
 		try {
@@ -162,7 +166,6 @@ public class ModelCheckingTest {
 			e.printStackTrace();
 			return;
 		}
-
 		// ///////////////////////////////////////
 		// ///////////////////////////////////////
 		// tempEntail tests //////////////////////
@@ -376,10 +379,49 @@ public class ModelCheckingTest {
 		checker.modelCheckStandardOutput(all_specs[7]); // failure 4
 	}
 
+	public static void rtctlCheck()  {
+		try {
+			Env.loadModule("BUTest.smv");
+		} catch (IOException e) {
+			e.printStackTrace();
+			return;
+		}
+		SMVModule main = (SMVModule) Env.getModule("main");
+		main.setFullPrintingMode(true);
+		System.out.println("========= DONE Loading Modules ==========");
+		String to_parse = "";
+//		to_parse += "CTLSPEC E [a=1 BU 2..10 a=200 ];\n"; // 0 F
+//		to_parse += "CTLSPEC EBF 6..10 a=3;\n"; // 0
+//		to_parse += "CTLSPEC EBF 6..10 a=4;\n"; // 0
+//		to_parse += "CTLSPEC A [a=1 BU 6..12 a=0 ];\n"; //
+//		to_parse += "CTLSPEC A [a=1 BU 6..12 a=3 ];\n"; //  T
+//		to_parse += "CTLSPEC EBG 6..10 a=2;\n"; // 2 T
+//		to_parse += "CTLSPEC a=2 -> EBF 6..10 a=20;\n"; // F
+		to_parse += "CTLSPEC a=1 -> ABF 6..10 a=2;\n"; // 2 T
+		Spec[] all_specs = Env.loadSpecString(to_parse);
+		System.out.println("========= DONE Loading Specs ============");
+
+		for (int i = 0; i < all_specs.length; i++) {
+			System.out.println(i+" isRealTimeCTLSpec: " + all_specs[i].isRealTimeCTLSpec());
+			CTLModelCheckAlg checker = new CTLModelCheckAlg(main,all_specs[i]);
+			// model checking a module
+			try {
+				checker.preAlgorithm();
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+			try {
+				System.out.println(i+checker.doAlgorithm().resultString());
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+		}
+	}
+
 	public static void rtctlkCheck() throws ModelCheckException {
 		// System.setProperty("bdd", "buddy");
 		try {
-			//Env.loadModule("testcases/simple_mc.smv");
+			//Env.loadModule("testcases/testMAS.smv");
 			Env.loadModule("testcases/dc3.smv");
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -388,25 +430,54 @@ public class ModelCheckingTest {
 		SMVModule main = (SMVModule) Env.getModule("main");
 		main.setFullPrintingMode(true);
 		System.out.println("========= DONE Loading Modules ==========");
+		String to_parse="";
+	    //estcases/testMAS.smv
+		//to_parse += "SPEC AG (agent2 KNOW v1);\n"; // 0
+//		to_parse += "CTLSPEC AG (agent1 KNOW v1);\n";
+//		to_parse += "CTLSPEC ABG 1..10 (agent1 KNOW agent1.y.x1);\n";
+//		to_parse += "CTLSPEC ABG 1..10 (agent1 KNOW agent2.y.x2);\n";
+//		to_parse += "CTLSPEC EBF 8..10 (agent1 KNOW agent2.z);\n";
+//		to_parse += "SPEC A [(agent1 KNOW agent2.y.x2) BU 6..10 (agent1 KNOW agent2.z)];\n"; // 1
 
-//		String to_parse = "SPEC (dc1 KNOW dc2.paid) \n";
-//		String to_parse = "SPEC v1 & !! A [ v1 U v2 ]\n";
-		String to_parse = "SPEC !dc1.paid -> AG( (dc1 KNOW (!dc1.paid & !dc2.paid & !dc3.paid)) | " +
-				"( (dc1 KNOW (dc2.paid | dc3.paid)) & !(dc1 KNOW dc2.paid) & !(dc1 KNOW dc3.paid) ) ) \n";
-
+		//to_parse += "SPEC EX (dc1 KNOW dc2.said);\n"; // 0
+		//to_parse += "SPEC EX coin1;\n"; // 0
+//		to_parse += "SPEC A [dc1.said BU 6..10 (dc1 KNOW dc3.paid)];\n"; // 1
+//		to_parse += "SPEC E [dc1.said BU 6..10 (dc1 KNOW dc3.paid)];\n"; // 1
+//		to_parse += "CTLSPEC ABF 1..100 (dc1 KNOW dc3.paid);\n"; // 2
+//		to_parse += "CTLSPEC EBF 6..10 (dc2 KNOW dc1.said);\n"; // 3
+//		to_parse += "CTLSPEC EBG 6..10 (dc3 KNOW dc2.paid);\n"; // 4
+//		to_parse += "CTLSPEC ABG 6..10 (dc1 KNOW  dc3.said);\n"; // 5
+//		to_parse += "SPEC dc1.paid -> EF(dc1 KNOW dc1.paid) ;\n";
+		to_parse += "CTLSPEC dc1.paid -> EBF 6..10 (dc2 KNOW dc1.said);\n"; // 3
 		Spec[] all_specs = Env.loadSpecString(to_parse);
 		System.out.println("========= DONE Loading Specs ============");
-/*
-		RTCTLKModelChecker checker;
-		checker = new RTCTLKModelChecker(main);
-		// model checking a module
-		checker.modelCheckStandardOutput(all_specs[0]);
-*/	}
 
-	public static void Check_test() {
-		// System.setProperty("bdd", "buddy");
+		for (int i = 0; i < all_specs.length; i++) {
+			RTCTLKModelCheckAlg checker;//与CTL*K一致
+			checker = new RTCTLKModelCheckAlg(main,all_specs[i]);
+			System.out.println("isRealTimeCTLKSpec()---"+all_specs[i].isRealTimeCTLKSpec());
+
+			// model checking a module
+			try {
+				checker.preAlgorithm();
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+			try {
+				String s=checker.doAlgorithm().resultString();
+				if(!s.contains("*** Property is VALID ***"))
+					System.err.println(i+"---"+s);
+				else
+					System.out.println(i+"---"+s);
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+		}
+	}
+	public static void CTLCounterExample()  {
 		try {
-			Env.loadModule("testcases/testMAS.smv");
+			//Env.loadModule("testcases/simple_mc.smv");
+			Env.loadModule("BUTest.smv");
 		} catch (IOException e) {
 			e.printStackTrace();
 			return;
@@ -414,55 +485,84 @@ public class ModelCheckingTest {
 		SMVModule main = (SMVModule) Env.getModule("main");
 		main.setFullPrintingMode(true);
 		System.out.println("========= DONE Loading Modules ==========");
-/*
 		String to_parse = "";
-		to_parse += "LTLSPEC\n" + "GLOBALLY aa -> FINALLY aa\n";
-		to_parse += "LTLSPEC\n" + "([](aa -> ()aa)) -> (<>aa -> <>[]aa)\n";
-		to_parse += "LTLSPEC\n" + "[] aa -> () aa\n";
+//		to_parse += "CTLSPEC AX a=2 \n"; // 0 F
+//		to_parse += "CTLSPEC AG a=1;\n"; // 0 F
+//		to_parse += "CTLSPEC A[ a=1 U a=20];\n"; // 0 F
+//		to_parse += "CTLSPEC EG a!=2;\n"; //0 F SMV返回TRUE
+	   //to_parse += "CTLSPEC AF a=2;\n"; //0 F SMV返回TRUE
+		//to_parse += "CTLSPEC AF a=20;\n";
+
+		//RTCTL EU、EG
+		//to_parse += "CTLSPEC ABG 0..10 a=20;\n";
+		to_parse += "CTLSPEC ABF 0..6 a=10;\n";
+		//to_parse += "CTLSPEC ABG 7..11 a=2;\n";
+		//to_parse += "CTLSPEC ABG 12..16 a=3;\n";
+		//to_parse += "CTLSPEC ABF 0..15 a=1;\n";
+		// need to be motified!!!
+		//to_parse += "SPEC ABG 1..7 a=10;\n"; // 1
+		//to_parse += "SPEC A [a=10 BU 0..10 a=30];\n";
+		//to_parse += "SPEC E [a!=3 BU 6..10 a!=1 & a!=3];\n"; // 1
+
+
+		Spec[] all_specs = Env.loadSpecString(to_parse);
+		for (int i = 0; i < all_specs.length; i++) {
+			CTLModelCheckAlg checker = new CTLModelCheckAlg(main,all_specs[i]);
+			// model checking a module
+			try {
+				checker.preAlgorithm();
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+			try {
+				String s=checker.doAlgorithm().resultString();
+				if(!s.contains("*** Property is VALID ***"))
+					System.err.println(i+"---"+s);
+				else
+					System.out.println(i+"---"+s);
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+		}
+	}
+	public static void Check_test() {
+		// System.setProperty("bdd", "buddy");
+		try {
+			Env.loadModule("testcases/simple_mc.smv");
+		} catch (IOException e) {
+			e.printStackTrace();
+			return;
+		}
+		SMVModule main = (SMVModule) Env.getModule("main");
+		main.setFullPrintingMode(true);
+		System.out.println("========= DONE Loading Modules ==========");
+
+		String to_parse = "";
+		to_parse += "LTLSPEC\n" + "G aa=100\n";
+		//to_parse += "LTLSPEC\n" + "([](aa -> ()aa)) -> (<>aa -> <>[]aa)\n";
+//		to_parse += "LTLSPEC\n" + "[] aa -> () aa\n";
 		to_parse += "LTLSPEC\n" + "[] aa -> <> aa\n";
 		to_parse += "LTLSPEC\n" + "[] aa\n"; // failure 1
-		to_parse += "LTLSPEC\n" + "<>[] aa\n"; // failure 2
-		to_parse += "LTLSPEC\n" + "<> aa -> [] aa\n"; // failure 3
-		to_parse += "LTLSPEC\n([](aa -> ()aa))->(<>aa -> []aa)\n"; // failure
+//		to_parse += "LTLSPEC\n" + "<>[] aa\n"; // failure 2
+//		to_parse += "LTLSPEC\n" + "<> aa -> [] aa\n"; // failure 3
+//		to_parse += "LTLSPEC\n([](aa -> ()aa))->(<>aa -> []aa)\n"; // failure
 
 		Spec[] all_specs = Env.loadSpecString(to_parse);
 		System.out.println("========= DONE Loading LTL Specs ============");
 
-		LTLModelChecker checker;
-		// checking valid without a module
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[0]);
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[1]);
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[2]);
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[3]);
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[4]); // failure 1
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[5]); // failure 2
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[6]); // failure 3
-		LTLModelChecker.standAloneValidStarndardOutput(all_specs[7]); // failure 4
-		try {
-			checker = new LTLModelChecker(main, true);
-		} catch (ModelCheckException e) {
-			e.printStackTrace();
-			return;
+		for (int i = 0; i < all_specs.length; i++) {
+			LTLModelCheckAlg checker = new LTLModelCheckAlg(main, all_specs[i]);
+			// model checking a module
+			try {
+				checker.preAlgorithm();
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
+			try {
+				System.out.println(i + checker.doAlgorithm().resultString());
+			} catch (AlgExceptionI algExceptionI) {
+				algExceptionI.printStackTrace();
+			}
 		}
-		// checking valid with a module
-		checker.validStarndardOutput(all_specs[0]);
-		checker.validStarndardOutput(all_specs[1]);
-		checker.validStarndardOutput(all_specs[2]);
-		checker.validStarndardOutput(all_specs[3]);
-		checker.validStarndardOutput(all_specs[4]); // failure 1
-		checker.validStarndardOutput(all_specs[5]); // failure 2
-		checker.validStarndardOutput(all_specs[6]); // failure 3
-		checker.validStarndardOutput(all_specs[7]); // failure 4
-		// model checking a module
-		checker.modelCheckStandardOutput(all_specs[0]);
-		checker.modelCheckStandardOutput(all_specs[1]);
-		checker.modelCheckStandardOutput(all_specs[2]);
-		checker.modelCheckStandardOutput(all_specs[3]);
-		checker.modelCheckStandardOutput(all_specs[4]); // failure 1
-		checker.modelCheckStandardOutput(all_specs[5]); // failure 2
-		checker.modelCheckStandardOutput(all_specs[6]); // failure 3
-		checker.modelCheckStandardOutput(all_specs[7]); // failure 4
-*/
 	}
-
 }

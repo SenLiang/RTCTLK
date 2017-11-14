@@ -2,20 +2,16 @@ package edu.wis.jtlv.lib.mc.CTL;
 
 import java.util.Vector;
 
+import edu.wis.jtlv.env.module.*;
+import edu.wis.jtlv.env.spec.*;
+import edu.wis.jtlv.lib.*;
+import edu.wis.jtlv.old_lib.mc.ModelCheckException;
 import net.sf.javabdd.BDD;
 import edu.wis.jtlv.env.Env;
-import edu.wis.jtlv.env.module.Module;
-import edu.wis.jtlv.env.module.ModuleWithStrongFairness;
-import edu.wis.jtlv.env.spec.Operator;
-import edu.wis.jtlv.env.spec.Spec;
-import edu.wis.jtlv.env.spec.SpecBDD;
-import edu.wis.jtlv.env.spec.SpecExp;
-import edu.wis.jtlv.lib.AlgExceptionI;
-import edu.wis.jtlv.lib.AlgResultI;
-import edu.wis.jtlv.lib.AlgResultString;
-import edu.wis.jtlv.lib.FixPoint;
 import edu.wis.jtlv.lib.mc.ModelCheckAlgException;
 import edu.wis.jtlv.lib.mc.ModelCheckAlgI;
+
+import static edu.wis.jtlv.env.spec.Operator.*;
 
 /**
  * <p>
@@ -46,6 +42,10 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 	public Spec getProperty() {
 		return property;
 	}
+
+	//add
+	Module design = getDesign();
+	BDD feas = design.feasible();//所有的可达状态
 
 	public void setProperty(Spec property) {
 		this.property = property;
@@ -95,7 +95,8 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 	 */
 	@Override
 	public AlgResultI preAlgorithm() throws AlgExceptionI {
-		if (!property.isCTLSpec()) // Real Time CTL is not included here.
+
+		if (!(property.isCTLSpec()|property.isRealTimeCTLSpec())) // Real Time CTL is not included here.
 			throw new ModelCheckAlgException("Cannot model check non CTL"
 					+ " specification: " + property);
 		return null;
@@ -128,7 +129,16 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 		if(FairInitStates.imp(calculateStates).isOne()){
 			return new AlgResultString(true, "*** Property is VALID ***");
 		}else{
-			return new AlgResultString(false, "*** Property is NOT VALID ***");
+			BDD[] example = new BDD[0];
+			try {
+				example = extractWithness(property);
+			} catch (ModelCheckException e) {
+				e.printStackTrace();
+			}
+			if (example==null)
+				return new AlgResultString(false, "*** Property is NOT VALID ***");
+			else
+				return new AlgResultPath(false, example);
 		}
 	}
 
@@ -157,9 +167,33 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 		SpecExp propExp = (SpecExp) property;
 		Operator op = propExp.getOperator();
 		Spec[] child = propExp.getChildren();
-		BDD left = satCTL(child[0]);
-		BDD right = (op.isBinary()) ? satCTL(child[1]) : null;
+		//	BDD left = CTLAux(child[0]);
+		//  BDD right = (op.isBinary()) ? CTLAux(child[1]) : null;
 
+		int noo = op.numOfOperands();
+		SpecRange range = null;
+		BDD left=null;
+		BDD right=null;
+
+		if (noo==1) //EX, EF, EG, AX, AF,AG left
+			left=satCTL(child[0]);
+		if (noo==2) {//ABF, ABG, EBF, EBG  left or right
+			if (child[0] instanceof SpecRange)
+			{   range = (SpecRange) child[0];
+				left= satCTL(child[1]);}//xxxxxxxx
+			else
+			{   left=satCTL(child[0]);//AU GU
+				right=satCTL(child[1]);
+			}
+		}
+		if (noo==3)// ABU, EBU
+		{
+			if (child[1] instanceof SpecRange)
+			{ range = (SpecRange) child[1];
+				left=satCTL(child[0]);//xxxxxxxx
+				right=satCTL(child[2]);//xxxxxxxxx
+			}
+		}
 		// propositional
 		if (op == Operator.NOT)
 			return left.not();
@@ -193,6 +227,20 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 			return AfU(left, right);
 		if (op == Operator.EU)
 			return EfU(left, right);
+		//Uppdate by LS on : 2017/10/20
+		// bounded CTL temporal
+		if (op == Operator.EBU)
+			return EfBU(range.getFrom(), range.getTo(), left, right);//EfBU(int from, int to, BDD p, BDD q)
+		if (op == Operator.ABU)//AfBU(int from, int to, BDD p, BDD q)
+			return AfBU(range.getFrom(), range.getTo(), left, right);
+		if (op == Operator.EBF)//EfBF(int from, int to, BDD p)
+			return EfBF(range.getFrom(), range.getTo(), left);
+		if (op == Operator.ABF)//(int from, int to, BDD p)
+			return AfBF(range.getFrom(), range.getTo(), left);
+		if (op == Operator.EBG)//(int from, int to, BDD p)
+			return EfBG(range.getFrom(), range.getTo(), left);
+		if (op == Operator.ABG)//AfBG(int from, int to, BDD p)
+			return AfBG(range.getFrom(), range.getTo(), left);
 
 		// something is wrong.
 		throw new ModelCheckAlgException(
@@ -236,7 +284,6 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 		 */
 		ModuleWithStrongFairness design = getDesign();
 		BDD old_z, z = Env.TRUE();
-
 		for (FixPoint<BDD> ires = new FixPoint<BDD>(); ires.advance(z);) {
 			old_z = z.id();
 			z = p.id();
@@ -253,7 +300,61 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 //			FairStates = ce_fair_g(Env.TRUE());
 		return allPredsIn(p, q.id().and(getFairStates()));
 	}
+	public BDD EfBU(int from, int to, BDD f, BDD g) {//****************
+		BDD Z=getDesign().feasible().and(g),oldZ=null;
+		for (int i=to-1;i>=from;i--){
+			oldZ=Z;
+			Z=f.and(getDesign().pred(Z));
+			if (Z.equals(oldZ)) break;}
 
+		for (int i=from-1;i>=0;i--){
+			oldZ=Z;
+			Z=f.and(getDesign().pred(Z));
+			if (Z.equals(oldZ)) break;}
+		return Z;
+	}
+
+	public BDD EfBG(int from, int to, BDD f) {//****************
+		BDD Z=getDesign().feasible().and(f),oldZ=null;
+		for (int i=to-1;i>=from;i--){
+		oldZ=Z;
+		Z=f.and(getDesign().pred(Z));
+		if (Z.equals(oldZ)) break;}
+
+		for (int i=from-1;i>=0;i--){
+			oldZ=Z;
+			Z=f.and(getDesign().pred(Z));
+			if (Z.equals(oldZ)) break;}
+		return Z;
+	}
+	// A[p BU from..to q] under fairness
+	public BDD AfBU(int from, int to, BDD p, BDD q) {
+		if(from==0 & to==0)
+			return q.id();
+		if(from>0)//(Operator.AND, new Spec[]{leftBaseSpec, new SpecExp(Operator.NEXT,transBUToLTLSPec(leftBaseSpec, baseSpec, a - 1, b))});
+			return p.id().and(AfX(EfBU(from-1, to-1, p, q)));
+		if(to>0)
+			return q.id().or(p.id().and(AfX(EfBU(from, to-1, p, q))));
+		return null;
+
+	}
+	/**A[p BU f..t q] is equivalent to
+	 ! ((EBF 0..(f - 1) !p)
+	 | EBG f..f ((EBG 0..(t - f) !q)
+	 | E[!q BU 0..(t - f) (!q & !p)]))
+	 **/
+	// EBF from..to p under fairness
+	public BDD EfBF(int from, int to, BDD p) {//rrrrrrrrr
+		return EfBU(from, to, Env.TRUE(), p);
+	}
+	// ABF from..to p under fairness
+	public BDD AfBF(int from, int to, BDD p) {//rrrrrrrrr
+		return EfBG(from,to,p.not()).not();
+	}
+	// ABG from..to p under fairness
+	public BDD AfBG(int from, int to, BDD p) {//rrrrrrrrr
+		return EfBF(from,to,p.not()).not();
+	}
 	public BDD allPredsIn(BDD p, BDD q) {
 		Module design = getDesign();
 		for (FixPoint<BDD> ires = new FixPoint<BDD>(); ires.advance(q);)
@@ -304,7 +405,6 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 					System.out.println("justice No. " + i);
 				design.restrictTrans(res.id().and(Env.prime(res.id())));
 			}
-
 			for (int i = design.compassionNum() - 1; i >= 0; i--) {
 				BDD tmp = res.id().and(design.qCompassionAt(i));
 				tmp = design.allPred(tmp.id()).and(design.allSucc(tmp.id()));
@@ -326,4 +426,444 @@ public class CTLModelCheckAlg extends ModelCheckAlgI {
 		design.setAllTransRestrictions(trans_restriction);
 		return this.allPredsIn(p.id(), res.id());
 	}
+	/*
+	begin example
+	 */
+	private BDD[] extractWithness(Spec property) throws ModelCheckException, ModelCheckAlgException {
+		//System.out.println("Spec  "+property+"initial  "+property);
+		SpecExp propExp = (SpecExp) property;
+		Operator op = propExp.getOperator();
+		if(op==EX|op==EF|op==EG|op==EU|op==EBF|op==EBG|op==EBU) return null;
+		Spec[] child = propExp.getChildren();
+		int noo = op.numOfOperands();
+		SpecRange range = null;
+		BDD left=null;
+		BDD right=null;
+		if (noo==1) //EX, EF, EG, AX, AF,AG left
+			left=satCTL(child[0]);
+		if (noo==2) {//ABF, ABG, EBF, EBG  left or right
+			if (child[0] instanceof SpecRange)
+			{ range = (SpecRange) child[0];
+				left=satCTL(child[1]);}//xxxxxxxx
+			else
+			{   left=satCTL(child[0]);//AU GU
+				right=satCTL(child[1]);
+			}
+		}
+		if (noo==3)// ABU, EBU
+		{
+			if (child[1] instanceof SpecRange)
+			{ range = (SpecRange) child[1];
+				left=satCTL(child[0]);
+				right=satCTL(child[2]);
+			}
+		}
+		//设置initial()为起点
+		BDD s=design.initial().and(design.feasible().satOne(design.moduleUnprimeVars(),false));
+		switch (op) {
+			/** Except for NOT、FINALLY、GLOBALLY、HISTORICALLY、NEXT、NOT_PREV_NOT、ONCE、PREV、B_FINALLY、B_GLOBALLY
+			 AND、OR、XOR、XNOR、IFF、IMPLIES、RELEASES、SINCE、TRIGGERED、UNTIL、B_UNTIL、B_UNTIL0 **/
+			case AX:
+				return EX_example(s, left.not());
+			case AG:
+				return EU_example(s,Env.TRUE(),left.not());
+			case AF:
+				return EG_example(s,left.not());
+			case AU:
+				BDD[] EU= EU_example(s,right.not(),left.not().and(right.not()));
+				if (EU==null){
+					BDD[] EG= EG_example(s,right.not());
+					return EG;}
+				return EU;
+			case ABF:
+				return EBG_example(s,range.getFrom(), range.getTo(),left.not());
+			case ABG:
+				return EBU_example(s,range.getFrom(), range.getTo(),Env.TRUE(),left.not());
+			case ABU:
+				BDD[] EBU= EBU_example(s,range.getFrom(), range.getTo(),right.not(),left.not().and(right.not()));
+				if (EBU==null){
+					BDD[] EBG= EBG_example(s,range.getFrom(), range.getTo(),right.not());
+				    return EBG;}
+				return EBU;
+//				System.out.println("EBG-----------------------------------------------------------");
+//				for(int i=0;i<EBG.length  ;i++)
+//				{  if(EBG[i]==null)break;
+//					System.out.println(i+"---"+EBG[i]);
+//				}
+//				System.out.println("EBU-----------------------------------------------------------");
+//				for(int i=0;i<EBU.length  ;i++)
+//				{  if(EBU[i]==null)break;
+//					System.out.println(i+"---"+EBU[i]);
+//				}
+		}
+		return null;
+	}
+	public BDD[] EX_example(BDD s, BDD f) {
+		BDD next=getDesign().succ(s).and(getDesign().feasible()).satOne(design.moduleUnprimeVars(),false);
+		/*
+		方法2
+		 */
+//		if (this.ctlFair == null)
+//		{
+//			ctlFair = ce_fair_g(Env.TRUE());
+//			acc=acc.and(ctlFair);
+//		}
+// next=acc.and(getDesign().reachable()).and(next);//满足f的后继状态
+		BDD[] returned_path = new BDD[2];
+		returned_path = new BDD[20];
+		returned_path[0]=s;
+		returned_path[1]=next;
+		return   returned_path;
+	}
+	public BDD[] EU_example(BDD s,BDD f,BDD g) {
+		BDD[] Z=new BDD[100];
+		Z[0]=g.id().and(getDesign().feasible());
+		if (Z[0].equals(Env.FALSE())) return null;
+		int i=0,n=0;
+		BDD[] returned_path = new BDD[100];
+		while (true)
+		{
+			if(!s.and(Z[i]).equals(Env.FALSE()))
+			{	returned_path[0]=s;
+				if(!s.and(Z[0]).equals(Env.FALSE()))
+				{   returned_path[0]=returned_path[0].and(Z[0]).satOne(getDesign().moduleUnprimeVars(),false);
+					return returned_path;
+				}
+				else
+				{n=i;break;}
+			}
+			Z[i+1]=f.and(getDesign().pred(Z[i]));
+			i=i+1;
+		}
+		for(i=1;i<=n;i++)
+			returned_path[i]=getDesign().succ(returned_path[i-1]).and(Z[n-i]).satOne(getDesign().moduleUnprimeVars(),false);
+		return returned_path;
+	}
+	public BDD[] EG_example(BDD s,BDD f) {
+		BDD feasible=getDesign().feasible().and(f);
+		BDD temp, fulfill;
+		// saving to the previous restriction state
+		Vector<BDD> trans_restrictions = design
+				.getAllTransRestrictions();
+
+		// Lines 1-2 are handled by the caller. ("verify")
+
+		// Line 3
+		design.restrictTrans(feasible.and(Env.prime(feasible)));
+
+		// Line 4
+		    //feasible.satOne(design.moduleUnprimeVars(), false); **************
+		// BDD s = feasible.satOne();
+
+		// Lines 5-6
+		while (true) {
+			temp = design.allSucc(s).and(
+					design.allPred(s).not());
+			if (!temp.isZero())
+				s = temp.satOne(design.moduleUnprimeVars(), false);
+				// s = temp.satOne();
+			else
+				break;
+		}
+		// Lines 5-6 : better version.
+		// temp = tester.allSucc(s).and(tester.allPred(s).not());
+		// while (!temp.isZero()){
+		// s = temp.satOne(tester.moduleUnprimeVars(), false);
+		// temp = tester.allSucc(s).and(tester.allPred(s).not());
+		// }
+
+		// Line 7: Compute MSCS containing s.
+		BDD feas = design.allSucc(s);
+
+		// Line 9
+		// Find prefix - shortest path from initial state to subgraph feas.
+		design.removeAllTransRestrictions();
+		Vector<BDD> prefix = new Vector<BDD>();
+		BDD[] path = design.shortestPath(design.initial(),
+				feas);
+		for (int i = 0; i < path.length; i++)
+			prefix.add(path[i]);
+
+		// //// Calculate "_period".
+
+		// Line 8: This has to come after line 9, because the way TS.tlv
+		// implements restriction.
+		design.restrictTrans(feas.and(Env.prime(feas)));
+
+		// Line 10
+		Vector<BDD> period = new Vector<BDD>();
+		period.add(prefix.lastElement());
+
+		// Since the last item of the prefix is the first item of
+		// the period we don't need to print the last item of the prefix.
+		temp = prefix.remove(prefix.size() - 1);
+
+		// Lines 11-13
+		if (design instanceof ModuleWithWeakFairness) {
+			ModuleWithWeakFairness weakDes = (ModuleWithWeakFairness) design;
+			for (int i = 0; i < weakDes.justiceNum(); i++) {
+				// Line 12, check if j[i] already satisfied
+				fulfill = Env.FALSE();
+				for (int j = 0; j < period.size(); j++) {
+					fulfill = period.elementAt(j).and(weakDes.justiceAt(i))
+							.satOne(weakDes.moduleUnprimeVars(), false);
+					// fulfill =
+					// period.elementAt(j).and(design.justiceAt(i)).satOne();
+					if (!fulfill.isZero())
+						break;
+				}
+				// Line 13
+				if (fulfill.isZero()) {
+					BDD from = period.lastElement();
+					BDD to = feas.and(weakDes.justiceAt(i));
+					path = weakDes.shortestPath(from, to);
+					// eliminate the edge since from is already in period
+					for (int j = 1; j < path.length; j++)
+						period.add(path[j]);
+				}
+			}
+		}
+		// Lines 14-16
+		if (design instanceof ModuleWithStrongFairness) {
+			ModuleWithStrongFairness strongDes = (ModuleWithStrongFairness) design;
+			for (int i = 0; i < strongDes.compassionNum(); i++) {
+				if (!feas.and(strongDes.pCompassionAt(i)).isZero()) {
+					// check if C requirement i is already satisfied
+					fulfill = Env.FALSE();
+					for (int j = 0; j < period.size(); j++) {
+						fulfill = period.elementAt(j).and(
+								strongDes.qCompassionAt(i)).satOne(
+								strongDes.moduleUnprimeVars(), false);
+						// fulfill =
+						// period.elementAt(j).and(design.qCompassionAt(i)).satOne();
+						if (!fulfill.isZero())
+							break;
+					}
+
+					if (fulfill.isZero()) {
+						BDD from = period.lastElement();
+						BDD to = feas.and(strongDes.qCompassionAt(i));
+						path = strongDes.shortestPath(from, to);
+						// eliminate the edge since from is already in period
+						for (int j = 1; j < path.length; j++)
+							period.add(path[j]);
+					}
+				}
+			}
+		}
+
+		//
+		// Close cycle
+		//
+
+		// A period of length 1 may be fair, but it might be the case that
+		// period[1] is not a successor of itself. The routine path
+		// will add nothing. To solve this
+		// case we add another state to _period, now it will be OK since
+		// period[1] and period[n] will not be equal.
+
+		// Line 17, but modified
+		if (!period.firstElement().and(period.lastElement()).isZero()) {
+			// The first and last states are already equal, so we do not
+			// need to extend them to complete a cycle, unless period is
+			// a degenerate case of length = 1, which is not a successor of
+			// self.
+			if (period.size() == 1) {
+				// Check if _period[1] is a successor of itself.
+				if (period.firstElement().and(
+						design.succ(period.firstElement())).isZero()) {
+					// period[1] is not a successor of itself: Add state to
+					// period.
+					period
+							.add(design
+									.succ(period.firstElement())
+									.satOne(
+											design
+													.moduleUnprimeVars(), false));
+					// period.add(design.succ(period.firstElement()).satOne());
+
+					// Close cycle.
+					BDD from = period.lastElement();
+					BDD to = period.firstElement();
+					path = design.shortestPath(from, to);
+					// eliminate the edges since from and to are already in
+					// period
+					for (int i = 1; i < path.length - 1; i++)
+						period.add(path[i]);
+				}
+			}
+		} else {
+			BDD from = period.lastElement();
+			BDD to = period.firstElement();
+			path = design.shortestPath(from, to);
+			// eliminate the edges since from and to are already in period
+			for (int i = 1; i < path.length - 1; i++)
+				period.add(path[i]);
+		}
+
+		// Yaniv - the last one is for closing the cycle. He won't be printed.
+		period.add(period.firstElement());
+
+		// There is no need to have the last state of the period
+		// in the counterexample since it already appears in _period[1]
+		// if (period.size() > 1)
+		// temp = period.remove(period.size() -1);
+
+		// Copy prefix and period.
+		prefix.addAll(period);
+		BDD[] returned_path = new BDD[prefix.size()];
+		prefix.toArray(returned_path);
+		for (int i = 0; i < returned_path.length; i++) {
+			returned_path[i] = returned_path[i].satOne(getDesign().moduleUnprimeVars(), false);
+		}
+		// returning to the previous restriction state
+		design.setAllTransRestrictions(trans_restrictions);
+		return returned_path;
+	}
+	public BDD[] EBU_example(BDD s,int from, int to, BDD f, BDD g){
+		BDD[] Z = new BDD[100];
+		int m=0,n=from;
+		BDD oldZ=null;
+		Z[to]=g.id().and(getDesign().feasible());
+		for(int i=to-1;i>=from;i--)
+		{
+			Z[i] = Z[i+1].or(f.and(design.pred(Z[i+1])));
+			if(Z[i].equals(Z[i+1])) {n=i;break;}
+			n=i;
+		}
+		oldZ=Z[n];
+		for(int i=from-1;i>=0;i--)
+		{
+			Z[i] = f.and(design.pred(oldZ));
+			if(Z[i].equals(oldZ)) {m=i;break;}
+			oldZ=Z[i];
+			m=i;
+		}
+		//System.out.println("--n--"+n+"--m--"+m);
+		BDD [] return_path=new BDD[100];
+		BDD c=s,next;
+		if (Z[m]==null)
+		{       m=n;
+				return_path[0]=c.and(Z[m]).satOne(getDesign().moduleUnprimeVars(),false);
+			return return_path;
+		}
+		else
+		{
+		for(int i=0;i<=m ;i++)//补齐0 ---- m
+		{
+			return_path[i]=c.and(f).and(Z[m]).satOne(getDesign().moduleUnprimeVars(),false);
+			next=getDesign().succ(c);
+			c=next;
+			//System.out.println(i+"---"+return_path[i]);
+		}
+		for(int i=m+1;i<=from-1;i++)//补齐m+1 ---- from-1
+		{
+			return_path[i]=getDesign().succ(return_path[i-1]).and(Z[i]).satOne(getDesign().moduleUnprimeVars(),false);
+			//System.out.println(i+"---"+return_path[i]);
+		}
+/*
+方法1
+ */
+//		int stop=0;
+//		for(int i=from;i<=n  ;i++)//补齐from ---- n
+//		{
+//			return_path[i]=getDesign().succ(return_path[i-1]).and(Z[n]).satOne(getDesign().moduleUnprimeVars(),false);
+//			//System.out.println(i+"---"+return_path[i]);
+//			if (!return_path[i].and(g.id()).equals(Env.FALSE())) {stop=1;break;}//*******
+//		}
+//		if(stop==0)//stop=1 提前结束无需补齐
+//		{
+//			int i=n;
+//			while(return_path[i].and(g.id()).equals(Env.FALSE())){//补齐n ---- to
+//				return_path[i+1]=getDesign().succ(return_path[i]).and(Z[i+1]).satOne(getDesign().moduleUnprimeVars(),false);
+//				i=i+1;
+//				//System.out.println(i+"---"+return_path[i]);
+//			}
+//		}
+//
+/*
+方法2
+ */
+		BDD nextZ,nextg;
+		for(int i=from;i<=to  ;i++)//补齐from ---- n --- to
+		{
+			if(i<=n) nextZ=Z[n];
+			else nextZ=Z[i];
+			nextg=getDesign().succ(return_path[i-1]).and(nextZ).and(g.id());
+			if (!nextg.equals(Env.FALSE())) {
+				return_path[i]=nextg.satOne(getDesign().moduleUnprimeVars(),false);
+				break;
+			}
+			return_path[i]=getDesign().succ(return_path[i-1]).and(nextZ);
+		}
+		return return_path;
+		}
+	}
+	public BDD[] EBG_example(BDD s,int from, int to, BDD f){
+		BDD[] Z = new BDD[100];
+		int m=0,n=0;
+		BDD oldZ=null;
+		Z[to]=f.id().and(getDesign().feasible());
+		for(int i=to-1;i>=from;i--)
+		{
+			Z[i] = Z[i+1].or(f.and(design.pred(Z[i+1])));
+			if(Z[i].equals(Z[i+1])) {n=i;break;}
+			n=i;
+		}
+		oldZ=Z[n];
+		for(int i=from-1;i>=0;i--)
+		{
+			Z[i] = design.pred(oldZ);
+			if(Z[i].equals(oldZ)) {m=i;break;}
+			oldZ=Z[i];
+			m=i;
+		}//from 为0跳过此步
+
+		BDD [] return_path=new BDD[100];
+		BDD c=s,next;
+
+		if(Z[m]==null)//0..n
+		{
+			m=n;
+			for(int i=0;i<=to ;i++)
+			{
+				return_path[i]=c.and(Z[m]).satOne(getDesign().moduleUnprimeVars(),false);
+				next=getDesign().succ(c);
+				c=next;
+				//System.out.println(i+"---"+return_path[i]);
+			}
+			return return_path;
+		}
+        else
+		{
+		if (s.and(Z[m]).equals(Env.FALSE()))return null;
+		for(int i=0;i<=m ;i++)//补齐0 ---- m
+		{
+			return_path[i]=c.and(Z[m]).satOne(getDesign().moduleUnprimeVars(),false);
+			next=getDesign().succ(c);
+			c=next;
+			//System.out.println(i+"---"+return_path[i]);
+		}
+		for(int i=m+1;i<=from-1;i++)//补齐m+1 ---- from-1
+		{
+			return_path[i]=getDesign().succ(return_path[i-1]).and(Z[i]).satOne(getDesign().moduleUnprimeVars(),false);
+			//System.out.println(i+"---"+return_path[i]);
+		}
+		int stop=0;
+		for(int i=from;i<=n  ;i++)//补齐from ---- n
+		{
+			return_path[i]=getDesign().succ(return_path[i-1]).and(Z[n]).satOne(getDesign().moduleUnprimeVars(),false);
+			//System.out.println(i+"---"+return_path[i]);
+		}
+		for(int i=n;i<=to-1;i++)//补齐n ---- to
+		{
+			return_path[i+1]=getDesign().succ(return_path[i]).and(Z[i+1]).satOne(getDesign().moduleUnprimeVars(),false);
+			//System.out.println(i+"---"+return_path[i]);
+		}
+		return return_path;
+		}
+	}
+	/*
+	end counterexample
+	 */
 }
