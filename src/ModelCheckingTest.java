@@ -447,16 +447,15 @@ public class ModelCheckingTest {
 //		to_parse += "CTLSPEC EBF 6..10 (dc2 KNOW dc1.said);\n"; // 3
 //		to_parse += "CTLSPEC EBG 6..10 (dc3 KNOW dc2.paid);\n"; // 4
 //		to_parse += "CTLSPEC ABG 6..10 (dc1 KNOW  dc3.said);\n"; // 5
-//		to_parse += "SPEC dc1.paid -> EF(dc1 KNOW dc1.paid) ;\n";
-		to_parse += "CTLSPEC dc1.paid -> EBF 6..10 (dc2 KNOW dc1.said);\n"; // 3
+		to_parse += "SPEC dc1.paid -> EF(dc1 KNOW dc1.paid) ;\n";//T
+		to_parse += "CTLSPEC dc1.paid -> EBF 6..10 (dc2 KNOW dc1.said);\n"; // F
+		to_parse += "CTLSPEC dc1.paid -> EBF 1..10 (dc1 KNOW dc1.paid);\n"; // F
 		Spec[] all_specs = Env.loadSpecString(to_parse);
 		System.out.println("========= DONE Loading Specs ============");
 
 		for (int i = 0; i < all_specs.length; i++) {
 			RTCTLKModelCheckAlg checker;//与CTL*K一致
 			checker = new RTCTLKModelCheckAlg(main,all_specs[i]);
-			System.out.println("isRealTimeCTLKSpec()---"+all_specs[i].isRealTimeCTLKSpec());
-
 			// model checking a module
 			try {
 				checker.preAlgorithm();

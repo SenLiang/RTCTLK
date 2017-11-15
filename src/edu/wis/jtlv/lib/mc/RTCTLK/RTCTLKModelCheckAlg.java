@@ -86,7 +86,6 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
                 right = satRTCTLK(child[2]);
             }
         }
-        System.out.println("NUM--"+noo+"   op--"+op+"   left--"+left+"   right--"+right);
         // propositional
         if (op == Operator.NOT)
             return left.not();
@@ -140,7 +139,6 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
             String agentName = child[0].toString();
             return know(agentName, right);
         }
-
         // something is wrong.
         throw new ModelCheckAlgException(
                 "Cannot identify root operator for sub specification: " + property);
@@ -181,7 +179,6 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
         }
     }
 
-
     /*
     begin RTCTLK counterexample
      */
@@ -196,22 +193,22 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
         BDD left=null;
         BDD right=null;
         if (noo==1) //EX, EF, EG, AX, AF,AG left
-            left=satCTL(child[0]);
+            left=satRTCTLK(child[0]);
         if (noo==2) {//ABF, ABG, EBF, EBG  left or right
             if (child[0] instanceof SpecRange)
             { range = (SpecRange) child[0];
-                left=satCTL(child[1]);}//xxxxxxxx
+                left=satRTCTLK(child[1]);}//xxxxxxxx
             else
-            {   left=satCTL(child[0]);//AU GU
-                right=satCTL(child[1]);
+            {   left=satRTCTLK(child[0]);//AU GU
+                right=satRTCTLK(child[1]);
             }
         }
         if (noo==3)// ABU, EBU
         {
             if (child[1] instanceof SpecRange)
             { range = (SpecRange) child[1];
-                left=satCTL(child[0]);
-                right=satCTL(child[2]);
+                left=satRTCTLK(child[0]);
+                right=satRTCTLK(child[2]);
             }
         }
         //设置initial()为起点
@@ -251,16 +248,31 @@ public class RTCTLKModelCheckAlg extends CTLModelCheckAlg{
 //				{  if(EBU[i]==null)break;
 //					System.out.println(i+"---"+EBU[i]);
 //				}
-            case KNOW:
-                return KNOW_example(s,range.getFrom(), range.getTo(),left.not());
+            case KNOW:{
+                 String agentName = child[0].toString();
+                return KNOW_example(agentName,s,range.getFrom(), range.getTo(),left.not());
+            }
         }
         return null;
     }
 
-    public BDD[] KNOW_example(BDD s,int from, int to, BDD f){
-        return null;
-    }
+    public BDD[] KNOW_example(String agentName,BDD s,int from, int to, BDD f){
+        BDD[] returned_path = new BDD[100];
+        if (!s.and(f).equals(Env.FALSE())){
+          returned_path[0]=s;
+          return returned_path;}
+        BDD start=getDesign().initial();
 
+        SMVAgentInfo agentInfo = Env.getAll_agent_modules().get(agentName);
+        BDDVarSet visVars = agentInfo.getVisVars_BDDVarSet();
+        // X - agentName's visible variables
+        BDDVarSet allInvisVars = Env.globalUnprimeVarsMinus(visVars);
+        BDD FairReachStates = getFairStates().and(getReachableStates());
+        BDD end = FairReachStates.imp(f).forAll(allInvisVars);
+        BDD subpath[]=getDesign().shortestPath(start,end);
+
+        return subpath;
+    }
 
       /*
     end RTCTLK counterexample
